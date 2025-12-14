@@ -1,0 +1,5 @@
+{
+  "name": "PodGenie",
+  "description": "Convert documents and text into engaging two-person podcasts using Gemini AI.",
+  "requestFramePermissions": []
+}
