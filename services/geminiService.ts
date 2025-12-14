@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { PodcastConfig, ScriptLine, Speaker } from "../types";
 
 // Initialize Gemini Client
@@ -47,9 +47,8 @@ export const generatePodcastScript = async (
     2. The Expert explains the concepts from the text in an accessible way.
     3. Keep it conversational. Use fillers like "Exactly", "That's a great point", etc., but don't overdo it.
     4. The output MUST be a valid JSON array of objects with "speaker" ("Host" or "Expert") and "text" fields.
-    5. Do not include any markdown formatting like \`\`\`json. Just the raw JSON.
-    6. CRITICAL: Do NOT summarize the content. You must cover the ENTIRETY of the provided input material in detail. Convert the full document into dialogue without omitting sections.
-    7. If the content is long, create a comprehensive script that covers everything.
+    5. CRITICAL: Do NOT summarize the content. You must cover the ENTIRETY of the provided input material in detail. Convert the full document into dialogue without omitting sections.
+    6. If the content is long, create a comprehensive script that covers everything.
     
     SPECIAL RULE FOR HTML/URL INPUT:
     - If the input is HTML or from a URL, you MUST first Extract ONLY the central content (article body, main post, documentation text).
@@ -88,16 +87,71 @@ export const generatePodcastScript = async (
       config: {
         systemInstruction,
         responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              speaker: {
+                type: Type.STRING,
+                description: "The speaker role. Must be 'Host' or 'Expert'."
+              },
+              text: {
+                type: Type.STRING,
+                description: "The dialogue text."
+              },
+            },
+            required: ["speaker", "text"],
+          },
+        },
         maxOutputTokens: 8192,
       },
     });
 
-    const jsonStr = response.text || "[]";
-    const script = JSON.parse(jsonStr) as { speaker: string; text: string }[];
+    let jsonStr = response.text || "[]";
+    
+    // Sanitize: Remove markdown code blocks if the model adds them despite schema
+    jsonStr = jsonStr.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+
+    let script: { speaker: string; text: string }[] = [];
+
+    try {
+      // Attempt strict JSON parsing first
+      script = JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.warn("Standard JSON parse failed, attempting regex fallback due to potential truncation:", parseError);
+      
+      // Fallback: Regex extraction for truncated JSON
+      // This looks for objects like {"speaker": "...", "text": "..."}
+      // It handles escaped quotes inside the text field.
+      const regex = /\{\s*"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+      
+      const matches = [...jsonStr.matchAll(regex)];
+      
+      if (matches.length > 0) {
+        script = matches.map(match => {
+          // match[1] is speaker, match[2] is text
+          // We need to unescape the text manually since we bypassed JSON.parse
+          // Simple unescape for quotes and newlines
+          const unescapedText = match[2]
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, '\n')
+            .replace(/\\\\/g, '\\');
+            
+          return {
+            speaker: match[1],
+            text: unescapedText
+          };
+        });
+      } else {
+        // If regex also fails, throw the original error
+        throw new Error("Failed to parse podcast script. The AI response might be malformed or empty.");
+      }
+    }
     
     // Validate and map to ScriptLine
     return script.map(s => ({
-      speaker: s.speaker === 'Host' || s.speaker === config.hostName ? Speaker.Host : Speaker.Expert,
+      speaker: (s.speaker === 'Host' || s.speaker === config.hostName || s.speaker === 'Speaker 1') ? Speaker.Host : Speaker.Expert,
       text: s.text
     }));
 
