@@ -5,7 +5,7 @@ import ScriptViewer from './components/ScriptViewer';
 import AudioPlayer from './components/AudioPlayer';
 import { generatePodcastScript, generatePodcastAudio } from './services/geminiService';
 import { AppState, PodcastConfig, ScriptLine, PodcastMode, TargetLanguage } from './types';
-import { Wand2, FileText, Headphones, Upload, X, FileIcon, Link, AlignLeft, BookOpen, MessagesSquare, Globe } from 'lucide-react';
+import { Wand2, FileText, Headphones, Upload, X, FileIcon, Link, AlignLeft, BookOpen, MessagesSquare, Globe, Hash } from 'lucide-react';
 
 // Pre-fill text from the prompt for convenience
 const DEMO_TEXT = `Preparation for Job Interviews
@@ -33,9 +33,13 @@ const App: React.FC = () => {
   const [url, setUrl] = useState<string>('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   
+  // Page Range State
+  const [startPage, setStartPage] = useState<string>('1');
+  const [endPage, setEndPage] = useState<string>('');
+
   // New State for Mode and Language
   const [podcastMode, setPodcastMode] = useState<PodcastMode>('monologue'); // Default to monologue based on user request
-  const [language, setLanguage] = useState<TargetLanguage>('Spanish'); // Default to Spanish based on user request
+  const [language, setLanguage] = useState<TargetLanguage>('English'); // Default to English based on user request
   
   const [appState, setAppState] = useState<AppState>(AppState.Idle);
   const [script, setScript] = useState<ScriptLine[]>([]);
@@ -62,6 +66,8 @@ const App: React.FC = () => {
 
   const clearFile = () => {
     setPdfFile(null);
+    setStartPage('1');
+    setEndPage('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -89,11 +95,12 @@ const App: React.FC = () => {
     setAppState(AppState.GeneratingScript);
     setError(null);
     try {
-      let input: { text?: string; pdfBase64?: string; url?: string } = {};
+      let input: { text?: string; pdfBase64?: string; url?: string; pageRange?: { start: string, end: string } } = {};
 
       if (inputMode === 'pdf' && pdfFile) {
         const base64 = await fileToBase64(pdfFile);
         input.pdfBase64 = base64;
+        input.pageRange = { start: startPage, end: endPage };
       } else if (inputMode === 'url') {
         input.url = url;
       } else {
@@ -264,19 +271,54 @@ const App: React.FC = () => {
               {inputMode === 'pdf' && (
                 <div className="h-96 flex flex-col items-center justify-center bg-slate-950/50 rounded-xl p-8 relative">
                    {pdfFile ? (
-                      <>
+                      <div className="w-full h-full flex flex-col items-center justify-center">
                         <div className="w-16 h-16 bg-indigo-500/10 rounded-full flex items-center justify-center mb-4">
                           <FileIcon className="w-8 h-8 text-indigo-400" />
                         </div>
                         <h3 className="text-lg font-medium text-white mb-1 truncate max-w-full px-4">{pdfFile.name}</h3>
                         <p className="text-sm text-slate-500 mb-6">{(pdfFile.size / 1024 / 1024).toFixed(2)} MB • PDF Document</p>
+                        
+                        {/* Page Range Inputs */}
+                        <div className="w-full max-w-xs bg-slate-900/80 rounded-lg p-4 mb-6 border border-slate-800">
+                          <div className="flex items-center gap-2 mb-2">
+                             <Hash className="w-4 h-4 text-indigo-400" />
+                             <span className="text-sm font-medium text-slate-300">Page Range to Read</span>
+                          </div>
+                          <div className="flex gap-2">
+                             <div className="flex-1">
+                               <label className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">From</label>
+                               <input 
+                                  type="number" 
+                                  min="1"
+                                  value={startPage}
+                                  onChange={(e) => setStartPage(e.target.value)}
+                                  className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
+                               />
+                             </div>
+                             <div className="flex-1">
+                               <label className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">To (Opt)</label>
+                               <input 
+                                  type="number" 
+                                  min="1"
+                                  placeholder="End"
+                                  value={endPage}
+                                  onChange={(e) => setEndPage(e.target.value)}
+                                  className="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
+                               />
+                             </div>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-2 leading-tight">
+                            Note: AI models have a word limit per generation. For large PDFs (40+ pages), process in chunks (e.g., 1-20, then 21-40).
+                          </p>
+                        </div>
+
                         <button 
                           onClick={clearFile}
                           className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition-colors text-slate-300"
                         >
-                          <X size={16} /> Remove
+                          <X size={16} /> Remove PDF
                         </button>
-                      </>
+                      </div>
                    ) : (
                       <>
                         <input

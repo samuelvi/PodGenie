@@ -15,6 +15,7 @@ export interface GenerateScriptInput {
   text?: string;
   pdfBase64?: string;
   url?: string;
+  pageRange?: { start: string; end: string };
 }
 
 // Helper to fetch URL content via proxy to avoid CORS
@@ -38,26 +39,39 @@ export const generatePodcastScript = async (
   const model = "gemini-2.5-flash";
 
   let systemInstruction = "";
+  const isMonologue = config.mode === 'monologue';
+  
+  // Construct page range instruction if present
+  let rangeInstruction = "";
+  if (input.pdfBase64 && input.pageRange?.start) {
+    const endStr = input.pageRange.end ? ` to Page ${input.pageRange.end}` : " to the end";
+    rangeInstruction = `FOCUS RANGE: Process content ONLY from Page ${input.pageRange.start}${endStr}. Ignore content before or after this range.`;
+  }
 
-  if (config.mode === 'monologue') {
-    // INSTRUCTION FOR AUDIOBOOK / MONOLOGUE
+  if (isMonologue) {
+    // INSTRUCTION FOR AUDIOBOOK / MONOLOGUE (PLAIN TEXT MODE)
+    // We use PLAIN TEXT response for monologue to maximize token usage for content 
+    // instead of wasting tokens on JSON syntax.
     systemInstruction = `
-      You are a professional audiobook narrator. Your task is to prepare the provided content for a direct reading.
+      You are a professional audiobook narrator.
       
-      Output Language: ${config.language}. (If the input is in a different language, TRANSLATE it to ${config.language} verbatim).
+      TASK: Read the provided document VERBATIM (word-for-word) as much as possible.
+      LANGUAGE: Output exclusively in ${config.language}. Translate if necessary.
       
-      Rules:
-      1. Do NOT generate a conversation. Do NOT summarize. 
-      2. Keep the text "al pie de la letra" (verbatim) as much as possible, preserving the full meaning and content.
-      3. Clean up the text: Remove PDF artifacts like page numbers, headers, footers, or weird line breaks.
-      4. The output MUST be a valid JSON array of objects with "speaker" (Must be "Narrator") and "text" fields.
-      5. Split the text into logical chunks (paragraphs) to ensure good pacing, but do not omit anything.
+      CRITICAL RULES:
+      1. NO SUMMARIES. NO SHORTCUTS. Process the document sequentially.
+      2. If the document is long, you MUST prioritize density and coverage over formatting.
+      3. OUTPUT FORMAT: Plain text only. Separate logical paragraphs with a double newline.
+      4. DO NOT include "Here is the audio script" or any conversational filler. Just the content.
+      5. IGNORE page numbers, headers, and footers from the PDF.
+      ${rangeInstruction}
       
-      SPECIAL RULE FOR HTML/URL:
-      - Extract central content, ignore menus/footers, then read the content verbatim.
+      STRUCTURE:
+      - Start reading from the specified start page.
+      - Continue sequentially.
     `;
   } else {
-    // INSTRUCTION FOR PODCAST / CONVERSATION
+    // INSTRUCTION FOR PODCAST / CONVERSATION (JSON MODE)
     systemInstruction = `
       You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host) and ${config.expertName} (Expert).
       
@@ -69,7 +83,8 @@ export const generatePodcastScript = async (
       2. The Expert explains the concepts from the text in an accessible way.
       3. Keep it conversational.
       4. The output MUST be a valid JSON array of objects with "speaker" ("Host" or "Expert") and "text" fields.
-      5. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input.
+      5. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input range.
+      ${rangeInstruction}
       
       SPECIAL RULE FOR HTML/URL:
       - Extract central content, ignore menus/footers.
@@ -79,8 +94,9 @@ export const generatePodcastScript = async (
   let contents: any[] = [];
   
   if (input.pdfBase64) {
+    const rangeText = input.pageRange?.start ? `(Pages ${input.pageRange.start}-${input.pageRange.end || 'End'})` : 'Full Document';
     contents = [
-      { text: `Process this PDF document (Mode: ${config.mode}, Language: ${config.language}). Cover the whole document.` },
+      { text: `Process this PDF document. Range: ${rangeText}. Mode: ${config.mode}, Language: ${config.language}. READ IT VERBATIM.` },
       { 
         inlineData: { 
           mimeType: "application/pdf", 
@@ -101,61 +117,89 @@ export const generatePodcastScript = async (
   }
 
   try {
+    const generationConfig: any = {
+      systemInstruction,
+      maxOutputTokens: 8192,
+    };
+
+    // Use Schema only for Conversation mode. 
+    // Monologue uses text/plain to save token space.
+    if (!isMonologue) {
+      generationConfig.responseMimeType = "application/json";
+      generationConfig.responseSchema = {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            speaker: {
+              type: Type.STRING,
+              description: "The speaker role."
+            },
+            text: {
+              type: Type.STRING,
+              description: "The text to be spoken."
+            },
+          },
+          required: ["speaker", "text"],
+        },
+      };
+    } else {
+      generationConfig.responseMimeType = "text/plain";
+    }
+
     const response = await ai.models.generateContent({
       model,
       contents,
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              speaker: {
-                type: Type.STRING,
-                description: "The speaker role."
-              },
-              text: {
-                type: Type.STRING,
-                description: "The text to be spoken."
-              },
-            },
-            required: ["speaker", "text"],
-          },
-        },
-        maxOutputTokens: 8192,
-      },
+      config: generationConfig,
     });
 
-    let jsonStr = response.text || "[]";
-    
-    // Sanitize
-    jsonStr = jsonStr.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
-
     let script: { speaker: string; text: string }[] = [];
+    const responseText = response.text || "";
 
-    try {
-      script = JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.warn("Standard JSON parse failed, attempting regex fallback:", parseError);
+    if (isMonologue) {
+      // Parse Plain Text for Monologue
+      // We assume the model followed instruction to separate paragraphs with newlines
+      const paragraphs = responseText.split(/\n\s*\n/);
       
-      const regex = /\{\s*"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
-      const matches = [...jsonStr.matchAll(regex)];
-      
-      if (matches.length > 0) {
-        script = matches.map(match => ({
-            speaker: match[1],
-            text: match[2].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
+      script = paragraphs
+        .filter(p => p.trim().length > 0)
+        .map(p => ({
+          speaker: "Narrator",
+          text: p.trim()
         }));
-      } else {
-        throw new Error("Failed to parse script. Response might be empty or malformed.");
+        
+    } else {
+      // Parse JSON for Conversation
+      let jsonStr = responseText.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
+      
+      try {
+        script = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.warn("Standard JSON parse failed, attempting regex fallback:", parseError);
+        
+        const regex = /\{\s*"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+        const matches = [...jsonStr.matchAll(regex)];
+        
+        if (matches.length > 0) {
+          script = matches.map(match => ({
+              speaker: match[1],
+              text: match[2].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
+          }));
+        } else {
+          // If pure JSON fails, maybe the model output text? Try to wrap as one block
+          if (jsonStr.length > 50) {
+             script = [{ speaker: "Expert", text: jsonStr }];
+          } else {
+             throw new Error("Failed to parse script. Response might be empty or malformed.");
+          }
+        }
       }
     }
     
+    // Map to final ScriptLine types
     return script.map(s => {
       let speakerEnum = Speaker.Expert;
-      if (config.mode === 'monologue') {
+      if (isMonologue) {
         speakerEnum = Speaker.Narrator;
       } else {
         if (s.speaker === 'Host' || s.speaker === config.hostName || s.speaker === 'Speaker 1') {
