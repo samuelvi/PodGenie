@@ -1,6 +1,7 @@
 export enum Speaker {
   Host = 'Host',
-  Expert = 'Expert'
+  Expert = 'Expert',
+  Narrator = 'Narrator'
 }
 
 export interface ScriptLine {
@@ -17,8 +18,13 @@ export enum AppState {
   Error = 'error'
 }
 
+export type PodcastMode = 'conversation' | 'monologue';
+export type TargetLanguage = 'English' | 'Spanish';
+
 export interface PodcastConfig {
   hostName: string;
   expertName: string;
   tone: 'Professional' | 'Casual' | 'Funny';
+  mode: PodcastMode;
+  language: TargetLanguage;
 }

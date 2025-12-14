@@ -4,8 +4,8 @@ import Button from './components/Button';
 import ScriptViewer from './components/ScriptViewer';
 import AudioPlayer from './components/AudioPlayer';
 import { generatePodcastScript, generatePodcastAudio } from './services/geminiService';
-import { AppState, PodcastConfig, ScriptLine } from './types';
-import { Wand2, FileText, Headphones, Upload, X, FileIcon, Link, AlignLeft } from 'lucide-react';
+import { AppState, PodcastConfig, ScriptLine, PodcastMode, TargetLanguage } from './types';
+import { Wand2, FileText, Headphones, Upload, X, FileIcon, Link, AlignLeft, BookOpen, MessagesSquare, Globe } from 'lucide-react';
 
 // Pre-fill text from the prompt for convenience
 const DEMO_TEXT = `Preparation for Job Interviews
@@ -33,6 +33,10 @@ const App: React.FC = () => {
   const [url, setUrl] = useState<string>('');
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   
+  // New State for Mode and Language
+  const [podcastMode, setPodcastMode] = useState<PodcastMode>('monologue'); // Default to monologue based on user request
+  const [language, setLanguage] = useState<TargetLanguage>('Spanish'); // Default to Spanish based on user request
+  
   const [appState, setAppState] = useState<AppState>(AppState.Idle);
   const [script, setScript] = useState<ScriptLine[]>([]);
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
@@ -42,7 +46,9 @@ const App: React.FC = () => {
   const config: PodcastConfig = {
     hostName: 'Kore',
     expertName: 'Fenrir',
-    tone: 'Professional'
+    tone: 'Professional',
+    mode: podcastMode,
+    language: language
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -142,10 +148,10 @@ const App: React.FC = () => {
         {/* Intro / Hero */}
         <div className="text-center my-12">
           <h2 className="text-4xl md:text-5xl font-bold text-white mb-4 tracking-tight">
-            Turn Any Content into <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Podcasts</span>
+            Turn Any Content into <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Audio</span>
           </h2>
           <p className="text-lg text-slate-400 max-w-2xl mx-auto">
-            Paste text, upload a PDF, or drop a URL. Gemini will extract the main content, ignore the clutter, and create a lifelike audio show.
+            Create an engaging Podcast conversation or a direct Audiobook reading. Translate and listen instantly.
           </p>
         </div>
 
@@ -154,6 +160,50 @@ const App: React.FC = () => {
           {/* Left Column: Input & Controls */}
           <div className="space-y-6">
             
+            {/* Settings Bar */}
+            <div className="flex flex-col md:flex-row gap-4">
+              
+              {/* Mode Selector */}
+              <div className="flex-1 bg-slate-900 rounded-xl border border-slate-800 p-1 flex">
+                <button
+                  onClick={() => setPodcastMode('conversation')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
+                    podcastMode === 'conversation' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <MessagesSquare size={16} /> Podcast
+                </button>
+                <button
+                  onClick={() => setPodcastMode('monologue')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
+                    podcastMode === 'monologue' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <BookOpen size={16} /> Audiobook
+                </button>
+              </div>
+
+              {/* Language Selector */}
+              <div className="flex-1 bg-slate-900 rounded-xl border border-slate-800 p-1 flex">
+                <button
+                  onClick={() => setLanguage('English')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
+                    language === 'English' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Globe size={16} /> English
+                </button>
+                <button
+                  onClick={() => setLanguage('Spanish')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-sm font-medium rounded-lg transition-all ${
+                    language === 'Spanish' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <Globe size={16} /> Spanish
+                </button>
+              </div>
+            </div>
+
             {/* Input Type Tabs */}
             <div className="flex p-1 bg-slate-900 rounded-xl border border-slate-800">
               <button
@@ -291,7 +341,7 @@ const App: React.FC = () => {
                 className="flex-1"
                >
                  <FileText size={18} />
-                 {script.length > 0 ? 'Regenerate Script' : 'Generate Script'}
+                 {script.length > 0 ? (podcastMode === 'monologue' ? 'Refresh Text' : 'Regenerate Script') : (podcastMode === 'monologue' ? 'Process Text' : 'Generate Script')}
                </Button>
             </div>
             
@@ -319,7 +369,7 @@ const App: React.FC = () => {
                     className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/20"
                    >
                      <Headphones size={18} />
-                     Generate Audio (Podcast)
+                     Generate Audio {podcastMode === 'monologue' ? '(Read Aloud)' : '(Podcast)'}
                    </Button>
                 </div>
               </div>
@@ -329,7 +379,7 @@ const App: React.FC = () => {
             {audioBase64 && (
               <div className="animate-fade-in-up">
                  <div className="h-px bg-slate-800 my-8" />
-                 <h3 className="text-xl font-semibold text-white mb-4">Your Podcast</h3>
+                 <h3 className="text-xl font-semibold text-white mb-4">Your Audio</h3>
                  <AudioPlayer base64Audio={audioBase64} />
               </div>
             )}
@@ -337,7 +387,7 @@ const App: React.FC = () => {
             {appState === AppState.Idle && script.length === 0 && (
                <div className="h-full flex flex-col items-center justify-center text-slate-600 border-2 border-dashed border-slate-800 rounded-2xl p-12 bg-slate-900/30">
                   <Wand2 size={48} className="mb-4 opacity-50" />
-                  <p>Your podcast script and audio will appear here.</p>
+                  <p>Your content will appear here.</p>
                </div>
             )}
           </div>

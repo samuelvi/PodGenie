@@ -37,30 +37,50 @@ export const generatePodcastScript = async (
   const ai = getClient();
   const model = "gemini-2.5-flash";
 
-  const systemInstruction = `
-    You are an expert podcast producer. Your task is to convert the provided input (text, document, or webpage) into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host) and ${config.expertName} (Expert).
-    
-    Tone: ${config.tone}.
-    
-    Rules:
-    1. The Host introduces the topic and asks guiding questions.
-    2. The Expert explains the concepts from the text in an accessible way.
-    3. Keep it conversational. Use fillers like "Exactly", "That's a great point", etc., but don't overdo it.
-    4. The output MUST be a valid JSON array of objects with "speaker" ("Host" or "Expert") and "text" fields.
-    5. CRITICAL: Do NOT summarize the content. You must cover the ENTIRETY of the provided input material in detail. Convert the full document into dialogue without omitting sections.
-    6. If the content is long, create a comprehensive script that covers everything.
-    
-    SPECIAL RULE FOR HTML/URL INPUT:
-    - If the input is HTML or from a URL, you MUST first Extract ONLY the central content (article body, main post, documentation text).
-    - COMPLETELY IGNORE navigation bars, menus, footers, "read more" links, advertisements, sidebars, and copyright notices.
-    - Only convert the meaningful central content into the podcast.
-  `;
+  let systemInstruction = "";
+
+  if (config.mode === 'monologue') {
+    // INSTRUCTION FOR AUDIOBOOK / MONOLOGUE
+    systemInstruction = `
+      You are a professional audiobook narrator. Your task is to prepare the provided content for a direct reading.
+      
+      Output Language: ${config.language}. (If the input is in a different language, TRANSLATE it to ${config.language} verbatim).
+      
+      Rules:
+      1. Do NOT generate a conversation. Do NOT summarize. 
+      2. Keep the text "al pie de la letra" (verbatim) as much as possible, preserving the full meaning and content.
+      3. Clean up the text: Remove PDF artifacts like page numbers, headers, footers, or weird line breaks.
+      4. The output MUST be a valid JSON array of objects with "speaker" (Must be "Narrator") and "text" fields.
+      5. Split the text into logical chunks (paragraphs) to ensure good pacing, but do not omit anything.
+      
+      SPECIAL RULE FOR HTML/URL:
+      - Extract central content, ignore menus/footers, then read the content verbatim.
+    `;
+  } else {
+    // INSTRUCTION FOR PODCAST / CONVERSATION
+    systemInstruction = `
+      You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host) and ${config.expertName} (Expert).
+      
+      Output Language: ${config.language}. (Translate the dialogue to ${config.language}).
+      Tone: ${config.tone}.
+      
+      Rules:
+      1. The Host introduces the topic and asks guiding questions.
+      2. The Expert explains the concepts from the text in an accessible way.
+      3. Keep it conversational.
+      4. The output MUST be a valid JSON array of objects with "speaker" ("Host" or "Expert") and "text" fields.
+      5. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input.
+      
+      SPECIAL RULE FOR HTML/URL:
+      - Extract central content, ignore menus/footers.
+    `;
+  }
 
   let contents: any[] = [];
   
   if (input.pdfBase64) {
     contents = [
-      { text: "Convert this PDF document into a podcast script following the system instructions. Cover the whole document." },
+      { text: `Process this PDF document (Mode: ${config.mode}, Language: ${config.language}). Cover the whole document.` },
       { 
         inlineData: { 
           mimeType: "application/pdf", 
@@ -71,7 +91,7 @@ export const generatePodcastScript = async (
   } else if (input.url) {
     const html = await fetchUrlContent(input.url);
     contents = [
-      { text: "Analyze the following HTML content. Extract the main central content, ignoring navigation and footer, and convert it into a podcast script:" },
+      { text: `Analyze the following HTML content. Extract main content and process it (Mode: ${config.mode}, Language: ${config.language}):` },
       { text: html }
     ];
   } else if (input.text) {
@@ -94,11 +114,11 @@ export const generatePodcastScript = async (
             properties: {
               speaker: {
                 type: Type.STRING,
-                description: "The speaker role. Must be 'Host' or 'Expert'."
+                description: "The speaker role."
               },
               text: {
                 type: Type.STRING,
-                description: "The dialogue text."
+                description: "The text to be spoken."
               },
             },
             required: ["speaker", "text"],
@@ -110,50 +130,43 @@ export const generatePodcastScript = async (
 
     let jsonStr = response.text || "[]";
     
-    // Sanitize: Remove markdown code blocks if the model adds them despite schema
+    // Sanitize
     jsonStr = jsonStr.replace(/^```json\s*/, "").replace(/^```\s*/, "").replace(/\s*```$/, "");
 
     let script: { speaker: string; text: string }[] = [];
 
     try {
-      // Attempt strict JSON parsing first
       script = JSON.parse(jsonStr);
     } catch (parseError) {
-      console.warn("Standard JSON parse failed, attempting regex fallback due to potential truncation:", parseError);
+      console.warn("Standard JSON parse failed, attempting regex fallback:", parseError);
       
-      // Fallback: Regex extraction for truncated JSON
-      // This looks for objects like {"speaker": "...", "text": "..."}
-      // It handles escaped quotes inside the text field.
       const regex = /\{\s*"speaker"\s*:\s*"([^"]+)"\s*,\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
-      
       const matches = [...jsonStr.matchAll(regex)];
       
       if (matches.length > 0) {
-        script = matches.map(match => {
-          // match[1] is speaker, match[2] is text
-          // We need to unescape the text manually since we bypassed JSON.parse
-          // Simple unescape for quotes and newlines
-          const unescapedText = match[2]
-            .replace(/\\"/g, '"')
-            .replace(/\\n/g, '\n')
-            .replace(/\\\\/g, '\\');
-            
-          return {
+        script = matches.map(match => ({
             speaker: match[1],
-            text: unescapedText
-          };
-        });
+            text: match[2].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
+        }));
       } else {
-        // If regex also fails, throw the original error
-        throw new Error("Failed to parse podcast script. The AI response might be malformed or empty.");
+        throw new Error("Failed to parse script. Response might be empty or malformed.");
       }
     }
     
-    // Validate and map to ScriptLine
-    return script.map(s => ({
-      speaker: (s.speaker === 'Host' || s.speaker === config.hostName || s.speaker === 'Speaker 1') ? Speaker.Host : Speaker.Expert,
-      text: s.text
-    }));
+    return script.map(s => {
+      let speakerEnum = Speaker.Expert;
+      if (config.mode === 'monologue') {
+        speakerEnum = Speaker.Narrator;
+      } else {
+        if (s.speaker === 'Host' || s.speaker === config.hostName || s.speaker === 'Speaker 1') {
+          speakerEnum = Speaker.Host;
+        }
+      }
+      return {
+        speaker: speakerEnum,
+        text: s.text
+      };
+    });
 
   } catch (error) {
     console.error("Error generating script:", error);
@@ -168,39 +181,52 @@ export const generatePodcastAudio = async (
   const ai = getClient();
   const model = "gemini-2.5-flash-preview-tts";
 
-  // Format the script into the text format Gemini expects for multi-speaker
-  // "Speaker: Text"
-  const textPrompt = script.map(line => {
-    const name = line.speaker === Speaker.Host ? config.hostName : config.expertName;
-    return `${name}: ${line.text}`;
-  }).join('\n\n');
-
-  const fullPrompt = `Generate a podcast audio for the following conversation between ${config.hostName} and ${config.expertName}.\n\n${textPrompt}`;
+  // Build the prompt text
+  let fullPrompt = "";
+  
+  if (config.mode === 'monologue') {
+    // For monologue, we just join the text
+    const fullText = script.map(line => line.text).join('\n\n');
+    fullPrompt = `Generate audio for this text in ${config.language}:\n\n${fullText}`;
+  } else {
+    // For conversation, we need Speaker: Text format
+    const textPrompt = script.map(line => {
+      const name = line.speaker === Speaker.Host ? config.hostName : config.expertName;
+      return `${name}: ${line.text}`;
+    }).join('\n\n');
+    fullPrompt = `Generate a podcast audio for the following conversation between ${config.hostName} and ${config.expertName} in ${config.language}.\n\n${textPrompt}`;
+  }
 
   try {
+    const speechConfig: any = {};
+
+    if (config.mode === 'monologue') {
+      // Single speaker configuration
+      speechConfig.voiceConfig = {
+        prebuiltVoiceConfig: { voiceName: 'Puck' } // Puck is good for narration too
+      };
+    } else {
+      // Multi-speaker configuration
+      speechConfig.multiSpeakerVoiceConfig = {
+        speakerVoiceConfigs: [
+          {
+            speaker: config.hostName,
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } }
+          },
+          {
+            speaker: config.expertName,
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Fenrir' } }
+          }
+        ]
+      };
+    }
+
     const response = await ai.models.generateContent({
       model,
       contents: fullPrompt,
       config: {
         responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          multiSpeakerVoiceConfig: {
-            speakerVoiceConfigs: [
-              {
-                speaker: config.hostName,
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: 'Puck' } // Deep, authoritative for Host
-                }
-              },
-              {
-                speaker: config.expertName,
-                voiceConfig: {
-                  prebuiltVoiceConfig: { voiceName: 'Fenrir' } // Clear, energetic for Expert
-                }
-              }
-            ]
-          }
-        }
+        speechConfig
       }
     });
 
