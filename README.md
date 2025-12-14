@@ -1,65 +1,66 @@
 # PodGenie 🧞‍♂️🎧
 
-PodGenie es una aplicación web impulsada por Inteligencia Artificial que transforma documentos PDF y textos largos en **podcasts de audio** atractivos con dos locutores (Host y Experto).
+PodGenie is an AI-powered web application that transforms PDF documents, webpages (URLs), and long texts into engaging **audio podcasts** featuring two hosts (Host and Expert).
 
-Utiliza la tecnología de **Google Gemini 2.5** para generar guiones naturales y **Gemini Audio** para sintetizar voces realistas.
+It uses **Google Gemini 2.5** technology to generate natural scripts and **Gemini Audio** to synthesize realistic voices.
 
-## Características Principales
+## Key Features
 
--   📄 **Carga de PDF:** Sube tus documentos y conviértelos automáticamente.
--   ✍️ **Entrada de Texto:** Pega notas, artículos o guiones directamente.
--   🤖 **Generación de Guiones:** Crea diálogos dinámicos entre dos personajes (Kore y Fenrir).
--   🗣️ **Voces Realistas:** Audio de alta calidad generado al instante.
--   ⬇️ **Descarga:** Guarda tu podcast en formato `.wav`.
+-   📄 **PDF Upload:** Upload your documents and convert them automatically.
+-   🔗 **URL Support:** Paste a webpage link and extract the central content (ignoring navigation/footers).
+-   ✍️ **Text Input:** Paste notes, articles, or scripts directly.
+-   🤖 **Script Generation:** Create dynamic dialogues between two characters (Kore and Fenrir).
+-   🗣️ **Realistic Voices:** High-quality audio generated instantly.
+-   ⬇️ **Download:** Save your podcast in `.wav` format.
 
-## Requisitos
+## Requirements
 
--   Docker y Docker Compose instalados en tu máquina.
--   Una **Google Gemini API Key** (puedes obtenerla en [Google AI Studio](https://aistudio.google.com/)).
+-   Docker and Docker Compose installed on your machine.
+-   A **Google Gemini API Key** (you can get one at [Google AI Studio](https://aistudio.google.com/)).
 
-## Instrucciones de Instalación y Uso (Docker)
+## Installation and Usage Instructions (Docker)
 
-La forma más sencilla de ejecutar PodGenie es utilizando Docker Compose.
+The easiest way to run PodGenie is using Docker Compose.
 
-### 1. Clonar o descargar el proyecto
-Asegúrate de tener todos los archivos del proyecto en una carpeta.
+### 1. Clone or download the project
+Ensure all project files are in a folder.
 
-### 2. Configurar la API Key
-Necesitas decirle a Docker tu clave de API. Tienes dos opciones:
+### 2. Configure the API Key
+You need to provide your API key to Docker. You have two options:
 
-**Opción A: Crear un archivo `.env` (Recomendado)**
-Crea un archivo llamado `.env` en la raíz del proyecto y añade tu clave:
+**Option A: Create a `.env` file (Recommended)**
+Create a file named `.env` in the root of the project and add your key:
 ```env
-API_KEY=tu_clave_de_api_aqui
+API_KEY=your_api_key_here
 ```
 
-**Opción B: Pasar la variable directamente**
-Puedes pasar la variable de entorno al ejecutar el comando.
+**Option B: Pass the variable directly**
+You can pass the environment variable when executing the command.
 
-### 3. Ejecutar la aplicación
-Abre una terminal en la carpeta del proyecto y ejecuta:
+### 3. Run the application
+Open a terminal in the project folder and run:
 
 ```bash
 docker-compose up
 ```
 
-Si usaste la Opción B (sin archivo .env), ejecuta:
+If you chose Option B (without a .env file), run:
 ```bash
-API_KEY=tu_clave_de_api_aqui docker-compose up
+API_KEY=your_api_key_here docker-compose up
 ```
 
-### 4. Acceder
-Una vez que el contenedor esté en marcha, abre tu navegador y visita:
+### 4. Access
+Once the container is running, open your browser and visit:
 
 👉 **http://localhost:3000**
 
-## Estructura del Proyecto
+## Project Structure
 
--   `/components`: Componentes reutilizables de React (UI).
--   `/services`: Lógica de conexión con la API de Gemini.
--   `/utils`: Utilidades para el manejo de audio (WAV encoding).
--   `Dockerfile`: Configuración de la imagen del contenedor.
--   `vite.config.ts`: Configuración del entorno de desarrollo.
+-   `/components`: Reusable React components (UI).
+-   `/services`: Logic for connecting with the Gemini API.
+-   `/utils`: Utilities for audio handling (WAV encoding).
+-   `Dockerfile`: Container image configuration.
+-   `vite.config.ts`: Development environment configuration.
 
 ---
 *Powered by Google Gemini API*
