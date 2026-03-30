@@ -71,17 +71,18 @@ export const generatePodcastScript = async (
   } else {
     // INSTRUCTION FOR PODCAST / CONVERSATION (JSON MODE)
     systemInstruction = `
-      You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host/Interviewer) and ${config.expertName} (Expert).
+      You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two people: ${config.hostName} (Host/Interviewer) and ${config.expertName} (Expert/Guest).
       
       Output Language: ${config.language}. (Translate the dialogue to ${config.language}).
       Tone: ${config.tone}.
       
       Rules:
-      1. The Host introduces the topic and asks guiding questions.
-      2. The Expert explains the concepts from the text in an accessible way.
-      3. Keep it conversational. Both the Host and the Expert MUST participate in the conversation.
-      4. The output MUST be a valid JSON array of objects with "speaker" (MUST be exactly "Host" or "Expert") and "text" fields.
-      5. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input range.
+      1. The Host (${config.hostName}) acts as the interviewer, introducing the topic and asking guiding questions that naturally prompt the next section of the text.
+      2. The Expert (${config.expertName}) answers the questions by ADHERING STRICTLY to the provided text.
+      3. CRITICAL FOR THE EXPERT: Do NOT change the point of view of the original text. If the source text is written in the first person ("I", "we"), the Expert must speak in the first person. Stick to the original script as much as possible without inventing new information or changing the perspective.
+      4. Keep it conversational but highly faithful to the source material. Both the Host and the Expert MUST participate in the conversation.
+      5. The output MUST be a valid JSON array of objects with "speaker" (MUST be exactly "Host" or "Expert") and "text" fields.
+      6. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input range, ensuring all key details and original phrasing from the source are utilized by the Expert.
       ${rangeInstruction}
       
       SPECIAL RULE FOR HTML/URL:
