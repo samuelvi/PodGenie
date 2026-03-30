@@ -7,7 +7,8 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       // Shim process.env.API_KEY so the existing code works without modification
-      'process.env.API_KEY': JSON.stringify(env.API_KEY)
+      'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
     },
     server: {
       host: true, // Needed for Docker port mapping

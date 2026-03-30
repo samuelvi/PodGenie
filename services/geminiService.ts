@@ -2,9 +2,8 @@ import { GoogleGenAI, Modality, Type } from "@google/genai";
 import { PodcastConfig, ScriptLine, Speaker } from "../types";
 
 // Initialize Gemini Client
-// Note: API Key must be in process.env.API_KEY
 const getClient = () => {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
     throw new Error("API Key is missing. Please check your environment variables.");
   }
@@ -36,7 +35,7 @@ export const generatePodcastScript = async (
   config: PodcastConfig
 ): Promise<ScriptLine[]> => {
   const ai = getClient();
-  const model = "gemini-2.5-flash";
+  const model = "gemini-3.1-pro-preview";
 
   let systemInstruction = "";
   const isMonologue = config.mode === 'monologue';
@@ -55,15 +54,14 @@ export const generatePodcastScript = async (
     systemInstruction = `
       You are a professional audiobook narrator.
       
-      TASK: Read the provided document VERBATIM (word-for-word) as much as possible.
-      LANGUAGE: Output exclusively in ${config.language}. Translate if necessary.
+      TASK: Read the provided document VERBATIM (word-for-word). DO NOT summarize, DO NOT omit any details, DO NOT change the structure. You must maintain the source text exactly.
+      LANGUAGE: Output exclusively in ${config.language}. Translate if necessary, but keep the exact same meaning and structure.
       
       CRITICAL RULES:
-      1. NO SUMMARIES. NO SHORTCUTS. Process the document sequentially.
-      2. If the document is long, you MUST prioritize density and coverage over formatting.
-      3. OUTPUT FORMAT: Plain text only. Separate logical paragraphs with a double newline.
-      4. DO NOT include "Here is the audio script" or any conversational filler. Just the content.
-      5. IGNORE page numbers, headers, and footers from the PDF.
+      1. NO SUMMARIES. NO SHORTCUTS. Process the document sequentially and completely.
+      2. OUTPUT FORMAT: Plain text only. Separate logical paragraphs with a double newline.
+      3. DO NOT include "Here is the audio script", "Sure, here is the translation", or any conversational filler. Just the content.
+      4. IGNORE page numbers, headers, and footers from the PDF.
       ${rangeInstruction}
       
       STRUCTURE:
@@ -73,7 +71,7 @@ export const generatePodcastScript = async (
   } else {
     // INSTRUCTION FOR PODCAST / CONVERSATION (JSON MODE)
     systemInstruction = `
-      You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host) and ${config.expertName} (Expert).
+      You are an expert podcast producer. Your task is to convert the provided input into an engaging, natural-sounding podcast dialogue between two hosts: ${config.hostName} (Host/Interviewer) and ${config.expertName} (Expert).
       
       Output Language: ${config.language}. (Translate the dialogue to ${config.language}).
       Tone: ${config.tone}.
@@ -81,8 +79,8 @@ export const generatePodcastScript = async (
       Rules:
       1. The Host introduces the topic and asks guiding questions.
       2. The Expert explains the concepts from the text in an accessible way.
-      3. Keep it conversational.
-      4. The output MUST be a valid JSON array of objects with "speaker" ("Host" or "Expert") and "text" fields.
+      3. Keep it conversational. Both the Host and the Expert MUST participate in the conversation.
+      4. The output MUST be a valid JSON array of objects with "speaker" (MUST be exactly "Host" or "Expert") and "text" fields.
       5. CRITICAL: Do NOT summarize the content excessively. Cover the ENTIRETY of the provided input range.
       ${rangeInstruction}
       
@@ -202,7 +200,8 @@ export const generatePodcastScript = async (
       if (isMonologue) {
         speakerEnum = Speaker.Narrator;
       } else {
-        if (s.speaker === 'Host' || s.speaker === config.hostName || s.speaker === 'Speaker 1') {
+        const speakerLower = String(s.speaker).toLowerCase();
+        if (speakerLower.includes('host') || speakerLower.includes('interviewer') || speakerLower === config.hostName.toLowerCase() || speakerLower.includes('speaker 1')) {
           speakerEnum = Speaker.Host;
         }
       }
